@@ -1,12 +1,11 @@
 @Library('keptn-library')_
 def keptn = new sh.keptn.Keptn()
 
-
 pipeline {
     agent {
         label 'jenkins-slave'
     }
-    
+
     parameters {
         choice(name: 'BUILD', choices: ['One', 'Two'], description: 'Choose Build')
     }
@@ -114,12 +113,15 @@ pipeline {
                             sh './cartstest.sh ' + cartsIp
 
                         }
+                        // Upload jmx file to keptn
                         if (params.BUILD == "One"){
                             keptn.keptnAddResources('loadtest/carts_load1.jmx','jmeter/load.jmx')
                         } 
                         else {
                             keptn.keptnAddResources('loadtest/carts_load2.jmx','jmeter/load.jmx')
                         }
+                        
+                        // Upload jmeter config file to keptn
                         keptn.keptnAddResources('jenkins/keptn/jmeter.conf.yaml','jmeter/jmeter.conf.yaml')
                         archiveArtifacts artifacts:'loadtest/**/*.*'
                         echo "Performance as a Self-Service: Triggering Keptn to execute Tests"
@@ -137,11 +139,12 @@ pipeline {
         stage('Evaluate Quality Gate') {
             steps {
                 script{
+
                     waitTime = 10
                     if(params.WaitForResult?.isInteger()) {
                         waitTime = params.WaitForResult.toInteger()
                     }
-            
+                
                     if(waitTime > 0) {
                         echo "Waiting until Keptn is done and returns the results"
                         def result = keptn.waitForEvaluationDoneEvent setBuildResult:true, waitTime:waitTime
@@ -149,23 +152,31 @@ pipeline {
                     } else {
                         echo "Not waiting for results. Please check the Keptns bridge for the details!"
                     }
+                    echo currentBuild.currentResult
+
                 }
             }
         }
         stage ('Deploy to Production'){
             steps{
                 container('kubectl'){
-                    echo 'Deploying to Production'
                     script{
-                        echo 'Deploying to Production'
-                        script{
-                            if (params.BUILD == 'One') {
-                                echo 'Waiting for carts service to start...'
-                                sleep 20
-                            } else {
-                                echo 'Waiting for carts service to start...'
-                                sleep 20
+                        if (currentBuild.currentResult == "SUCCESS"){
+                            echo 'Deploying to Production'
+                            script{
+                                if (params.BUILD == 'One') {
+                                    echo 'Waiting for carts service to start...'
+                                    sleep 20
+                                } else {
+                                    echo 'Waiting for carts service to start...'
+                                    sleep 20
+                                }
                             }
+                        } 
+                        else {
+                            catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                                 sh "exit 1"
+                            }   
                         }
                     }
                 }
